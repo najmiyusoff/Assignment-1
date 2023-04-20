@@ -1,0 +1,72 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <signal.h>
+#include <string.h>
+
+#define MAX_CHILD 100
+#define BUFFER_SIZE 1024
+
+void handle_interrupt(int sig);
+
+int main()
+{
+    int i;
+    int num_child;
+    int fd[MAX_CHILD][2];    // file descriptors for pipes
+    pid_t pid[MAX_CHILD];    // child process IDs
+    char buffer[BUFFER_SIZE];
+
+ 	signal(SIGINT, handle_interrupt);
+ 	
+    // prompt user for number of child processes to create
+    printf("Enter the number of child processes to create (up to %d): ", MAX_CHILD);
+    scanf("%d", &num_child);
+
+    // create pipes for each child process
+    for (i = 0; i < num_child; i++) {
+        if (pipe(fd[i]) == -1) {
+            perror("pipe");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    // create child processes
+    for (i = 0; i < num_child; i++) {
+        pid[i] = fork();
+        if (pid[i] == -1) {
+            perror("fork");
+            exit(EXIT_FAILURE);
+        } else if (pid[i] == 0) {
+            // child process
+            close(fd[i][1]);    // close write end of pipe
+            while (read(fd[i][0], buffer, BUFFER_SIZE) > 0) {
+                printf("Child %d received message: %s", i+1, buffer);
+            }
+            close(fd[i][0]);    // close read end of pipe
+            exit(EXIT_SUCCESS);
+        }
+    }
+
+    // parent process
+    for (;;) {
+        // prompt user for message to send to child processes
+        printf("Enter a message to send to child processes (or press Ctrl+C to quit): ");
+        fgets(buffer, BUFFER_SIZE, stdin);
+
+        // send message to each child process via pipe
+        for (i = 0; i < num_child; i++) {
+            close(fd[i][0]);    // close read end of pipe
+            write(fd[i][1], buffer, strlen(buffer)+1);
+            close(fd[i][1]);    // close write end of pipe
+        }
+    }
+
+    return 0;
+}
+
+void handle_interrupt(int sig)
+{
+    printf("\nInterrupt signal (%d) received. Exiting...\n", sig);
+    exit(EXIT_SUCCESS);
+}
